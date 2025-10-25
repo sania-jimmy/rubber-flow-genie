@@ -31,7 +31,7 @@ export const ProductInput = ({ products, onAddProduct, onRemoveProduct }: Produc
       name,
       count: parseInt(count),
       requirementDate: date,
-      processingTimePerUnit: parseFloat(processingTime)
+      processingTimePerUnit: parseFloat(processingTime) / 60 // Convert minutes to hours
     });
 
     setName("");
@@ -98,13 +98,13 @@ export const ProductInput = ({ products, onAddProduct, onRemoveProduct }: Produc
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="processing-time">Processing Time (hours/unit)</Label>
+            <Label htmlFor="processing-time">Processing Time (minutes/unit)</Label>
             <Input
               id="processing-time"
               type="number"
-              step="0.1"
-              min="0.1"
-              placeholder="e.g., 0.5"
+              step="1"
+              min="1"
+              placeholder="e.g., 30"
               value={processingTime}
               onChange={(e) => setProcessingTime(e.target.value)}
             />
@@ -139,7 +139,7 @@ export const ProductInput = ({ products, onAddProduct, onRemoveProduct }: Produc
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">
-                        {product.processingTimePerUnit}h/unit
+                        {Math.round(product.processingTimePerUnit * 60)}min/unit
                       </p>
                     </div>
                   </div>

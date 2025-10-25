@@ -82,7 +82,7 @@ const Index = () => {
             <div>
               <h1 className="text-3xl font-bold">Rubber Factory Production Scheduler</h1>
               <p className="text-muted-foreground mt-1">
-                AI-powered production planning using Genetic Algorithm optimization
+                Production planning using Genetic Algorithm optimization
               </p>
             </div>
           </div>
