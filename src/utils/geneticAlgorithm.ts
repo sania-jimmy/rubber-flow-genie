@@ -175,6 +175,7 @@ export class GeneticAlgorithmScheduler {
     const scheduledProducts: ScheduledProduct[] = [];
     const dailySchedule: DailySchedule[] = [];
     let currentDay = 0;
+    let currentDayHours = 0; // Track hours used in current day
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -182,59 +183,77 @@ export class GeneticAlgorithmScheduler {
       const productIndex = order[i];
       const product = this.products[productIndex];
       
-      const piecesPerDay = Math.floor(this.workingHoursPerDay / product.processingTimePerUnit);
-      const totalDaysRequired = Math.ceil(product.count / piecesPerDay);
-      
-      const daysUntilDeadline = Math.floor(
-        (product.requirementDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      
-      const extraDays = Math.max(0, (currentDay + totalDaysRequired) - daysUntilDeadline);
-
-      scheduledProducts.push({
-        ...product,
-        startDay: currentDay,
-        totalDaysRequired,
-        piecesPerDay,
-        extraDays,
-        productionOrder: i + 1
-      });
-
-      // Create daily schedule for this product
+      const startDay = currentDay;
       let remainingPieces = product.count;
-      for (let day = 0; day < totalDaysRequired; day++) {
-        const dayIndex = currentDay + day;
-        const piecesToday = Math.min(remainingPieces, piecesPerDay);
-        const hoursUsed = piecesToday * product.processingTimePerUnit;
-        
-        if (!dailySchedule[dayIndex]) {
+      let totalDaysRequired = 0;
+      let productStartDay = currentDay;
+      
+      // Schedule this product starting from current day/hour
+      while (remainingPieces > 0) {
+        // Initialize day if needed
+        if (!dailySchedule[currentDay]) {
           const date = new Date(today);
-          date.setDate(date.getDate() + dayIndex);
-          dailySchedule[dayIndex] = {
-            day: dayIndex + 1,
+          date.setDate(date.getDate() + currentDay);
+          dailySchedule[currentDay] = {
+            day: currentDay + 1,
             date,
             products: [],
             totalHoursUsed: 0
           };
         }
 
-        dailySchedule[dayIndex].products.push({
+        // Calculate how many pieces can fit in remaining hours today
+        const availableHours = this.workingHoursPerDay - currentDayHours;
+        const piecesCanFitToday = Math.floor(availableHours / product.processingTimePerUnit);
+        const piecesToday = Math.min(remainingPieces, Math.max(1, piecesCanFitToday));
+        const hoursUsed = piecesToday * product.processingTimePerUnit;
+
+        // Add to daily schedule
+        dailySchedule[currentDay].products.push({
           productId: product.id,
           productName: product.name,
           pieces: piecesToday,
           hoursUsed
         });
-        dailySchedule[dayIndex].totalHoursUsed += hoursUsed;
+        dailySchedule[currentDay].totalHoursUsed += hoursUsed;
 
         remainingPieces -= piecesToday;
+        currentDayHours += hoursUsed;
+        totalDaysRequired++;
+
+        // Move to next day if current day is full or nearly full
+        if (currentDayHours >= this.workingHoursPerDay - 0.01 && remainingPieces > 0) {
+          currentDay++;
+          currentDayHours = 0;
+        }
       }
 
-      currentDay += totalDaysRequired;
+      // Calculate average pieces per day for display
+      const piecesPerDay = Math.floor(product.count / totalDaysRequired);
+      
+      const daysUntilDeadline = Math.floor(
+        (product.requirementDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      
+      const completionDay = currentDayHours > 0 ? currentDay + 1 : currentDay;
+      const extraDays = Math.max(0, completionDay - daysUntilDeadline);
+
+      scheduledProducts.push({
+        ...product,
+        startDay: productStartDay,
+        totalDaysRequired,
+        piecesPerDay,
+        extraDays,
+        productionOrder: i + 1
+      });
     }
+
+    // Calculate total days (if last day has any hours used, count it)
+    const totalDays = currentDayHours > 0 ? currentDay + 1 : currentDay;
 
     return {
       products: scheduledProducts,
-      totalDays: currentDay,
+      totalDays,
       dailySchedule: dailySchedule.filter(d => d !== undefined)
     };
   }
