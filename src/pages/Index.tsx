@@ -1,174 +1,201 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ProductInput } from "@/components/ProductInput";
-import { ScheduleResults } from "@/components/ScheduleResults";
-import { GanttChart } from "@/components/GanttChart";
-import { DailyScheduleView } from "@/components/DailyScheduleView";
-import { Product, ProductionSchedule } from "@/types/production";
-import { GeneticAlgorithmScheduler } from "@/utils/geneticAlgorithm";
-import { downloadScheduleAsCSV, downloadScheduleAsText } from "@/utils/downloadSchedule";
+import { Switch } from "@/components/ui/switch";
+import { Sparkles } from "lucide-react";
+import { ProductConfig, ProductOrder, ScheduleResult } from "@/types/scheduler";
+import { ProductConfigManager } from "@/components/ProductConfigManager";
+import { OrderInput } from "@/components/OrderInput";
+import { ScheduleSummary } from "@/components/ScheduleSummary";
+import { ProductionDetails } from "@/components/ProductionDetails";
+import { DailyView } from "@/components/DailyView";
+import { calculateScheduleMILP } from "@/utils/milpScheduler";
 import { toast } from "sonner";
-import { Factory, Sparkles, Download, FileText } from "lucide-react";
 
 const Index = () => {
-  const [workingHours, setWorkingHours] = useState("8");
-  const [products, setProducts] = useState<Product[]>([]);
-  const [schedule, setSchedule] = useState<ProductionSchedule | null>(null);
+  const [workingHours, setWorkingHours] = useState<number>(8);
+  const [includeExtra, setIncludeExtra] = useState<boolean>(false);
+  const [productConfigs, setProductConfigs] = useState<ProductConfig[]>([]);
+  const [orders, setOrders] = useState<ProductOrder[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleResult | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleAddProduct = (product: Omit<Product, "id">) => {
-    const newProduct: Product = {
-      ...product,
-      id: crypto.randomUUID()
+  const handleAddConfig = (config: Omit<ProductConfig, "id">) => {
+    const newConfig: ProductConfig = {
+      ...config,
+      id: Date.now().toString(),
     };
-    setProducts([...products, newProduct]);
-    toast.success(`${product.name} added to production queue`);
+    setProductConfigs([...productConfigs, newConfig]);
+    toast.success(`Product type "${config.name}" added`);
   };
 
-  const handleRemoveProduct = (id: string) => {
-    setProducts(products.filter(p => p.id !== id));
-    toast.success("Product removed");
+  const handleRemoveConfig = (id: string) => {
+    // Remove config and all orders that use this product
+    setProductConfigs(productConfigs.filter((c) => c.id !== id));
+    setOrders(orders.filter((o) => o.productId !== id));
+    setSchedule(null);
+    toast.info("Product type removed");
+  };
+
+  const calculatePriority = (requirementDate: Date): "High" | "Medium" | "Low" => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysUntilDeadline = Math.ceil(
+      (requirementDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (daysUntilDeadline <= 3) return "High";
+    if (daysUntilDeadline <= 7) return "Medium";
+    return "Low";
+  };
+
+  const handleAddOrder = (order: Omit<ProductOrder, "id" | "priority">) => {
+    const priority = calculatePriority(order.requirementDate);
+    const newOrder: ProductOrder = {
+      ...order,
+      id: Date.now().toString(),
+      priority,
+    };
+    setOrders([...orders, newOrder]);
+    toast.success(`Order added with ${priority} priority`);
+  };
+
+  const handleRemoveOrder = (id: string) => {
+    setOrders(orders.filter((o) => o.id !== id));
+    setSchedule(null);
   };
 
   const handleGenerateSchedule = () => {
-    if (products.length === 0) {
-      toast.error("Please add at least one product");
+    if (productConfigs.length === 0) {
+      toast.error("Please add at least one product type in configuration");
       return;
     }
 
-    if (!workingHours || parseFloat(workingHours) <= 0) {
-      toast.error("Please enter valid working hours");
+    if (orders.length === 0) {
+      toast.error("Please add at least one order");
+      return;
+    }
+
+    if (workingHours <= 0) {
+      toast.error("Working hours must be greater than 0");
       return;
     }
 
     setIsGenerating(true);
-    toast.info("Optimizing production schedule...");
+    toast.info("Calculating optimal schedule using MILP...");
 
-    // Simulate some processing time for the genetic algorithm
     setTimeout(() => {
-      const scheduler = new GeneticAlgorithmScheduler(
-        products,
-        parseFloat(workingHours)
-      );
-      const optimizedSchedule = scheduler.optimize();
-      setSchedule(optimizedSchedule);
-      setIsGenerating(false);
-      toast.success("Schedule generated successfully!");
-    }, 1500);
-  };
-
-  const handleDownloadCSV = () => {
-    if (!schedule) return;
-    downloadScheduleAsCSV(schedule, parseFloat(workingHours));
-    toast.success("Schedule downloaded as CSV");
-  };
-
-  const handleDownloadText = () => {
-    if (!schedule) return;
-    downloadScheduleAsText(schedule, parseFloat(workingHours));
-    toast.success("Schedule downloaded as text file");
+      try {
+        const result = calculateScheduleMILP(
+          orders,
+          productConfigs,
+          workingHours,
+          includeExtra
+        );
+        setSchedule(result);
+        setIsGenerating(false);
+        toast.success("Schedule optimized successfully!");
+      } catch (error) {
+        console.error("Scheduling error:", error);
+        setIsGenerating(false);
+        toast.error("Failed to generate schedule. Please try again.");
+      }
+    }, 100);
   };
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center gap-3">
-            <Factory className="h-8 w-8 text-primary" />
+      <div className="container mx-auto py-8 px-4 space-y-8">
+        <div className="text-center space-y-2">
+          <div className="flex items-center justify-center gap-2">
+            <Sparkles className="w-8 h-8 text-primary" />
+            <h1 className="text-4xl font-bold text-foreground">
+              Rubber Factory Production Scheduler
+            </h1>
+          </div>
+          <p className="text-muted-foreground">
+            Production planning using MILP optimization
+          </p>
+        </div>
+
+        <Card className="p-6">
+          <div className="space-y-4">
             <div>
-              <h1 className="text-3xl font-bold">Rubber Factory Production Scheduler</h1>
-              <p className="text-muted-foreground mt-1">
-                Production planning using Genetic Algorithm optimization
+              <h3 className="text-lg font-semibold text-foreground">Factory Settings</h3>
+              <p className="text-sm text-muted-foreground">
+                Configure your factory's operational parameters
               </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
+              <div className="space-y-2">
+                <Label htmlFor="workingHours">Working Hours per Day</Label>
+                <Input
+                  id="workingHours"
+                  type="number"
+                  min="1"
+                  max="24"
+                  value={workingHours}
+                  onChange={(e) => setWorkingHours(Number(e.target.value))}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Total productive hours available per day
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="includeExtra">Fill Idle Time</Label>
+                <div className="flex items-center space-x-2 pt-2">
+                  <Switch
+                    id="includeExtra"
+                    checked={includeExtra}
+                    onCheckedChange={setIncludeExtra}
+                  />
+                  <Label htmlFor="includeExtra" className="cursor-pointer">
+                    Include extra production to maximize capacity
+                  </Label>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
-
-      <main className="container mx-auto px-4 py-8 space-y-8">
-        {/* Factory Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Factory Settings</CardTitle>
-            <CardDescription>Configure your factory's operational parameters</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="max-w-xs space-y-2">
-              <Label htmlFor="working-hours">Working Hours per Day</Label>
-              <Input
-                id="working-hours"
-                type="number"
-                min="1"
-                max="24"
-                step="0.5"
-                value={workingHours}
-                onChange={(e) => setWorkingHours(e.target.value)}
-                placeholder="e.g., 8"
-              />
-              <p className="text-sm text-muted-foreground">
-                Total productive hours available per day
-              </p>
-            </div>
-          </CardContent>
         </Card>
 
-        {/* Product Input */}
-        <ProductInput
-          products={products}
-          onAddProduct={handleAddProduct}
-          onRemoveProduct={handleRemoveProduct}
+        <ProductConfigManager
+          configs={productConfigs}
+          onAddConfig={handleAddConfig}
+          onRemoveConfig={handleRemoveConfig}
         />
 
-        {/* Generate Button */}
-        {products.length > 0 && (
+        {productConfigs.length > 0 && (
+          <OrderInput
+            orders={orders}
+            productConfigs={productConfigs}
+            onAddOrder={handleAddOrder}
+            onRemoveOrder={handleRemoveOrder}
+          />
+        )}
+
+        {orders.length > 0 && (
           <div className="flex justify-center">
             <Button
               size="lg"
               onClick={handleGenerateSchedule}
               disabled={isGenerating}
-              className="min-w-64"
             >
-              <Sparkles className="mr-2 h-5 w-5" />
-              {isGenerating ? "Optimizing Schedule..." : "Generate Optimal Schedule"}
+              <Sparkles className="w-5 h-5 mr-2" />
+              {isGenerating ? "Optimizing..." : "Generate Optimal Schedule"}
             </Button>
           </div>
         )}
 
-        {/* Results */}
         {schedule && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Download Buttons */}
-            <div className="flex justify-end gap-3">
-              <Button variant="outline" onClick={handleDownloadText}>
-                <FileText className="mr-2 h-4 w-4" />
-                Download as Text
-              </Button>
-              <Button variant="outline" onClick={handleDownloadCSV}>
-                <Download className="mr-2 h-4 w-4" />
-                Download as CSV
-              </Button>
-            </div>
-
-            <ScheduleResults schedule={schedule} />
-            <GanttChart schedule={schedule} />
-            <DailyScheduleView 
-              schedule={schedule} 
-              workingHoursPerDay={parseFloat(workingHours)} 
-            />
+          <div className="space-y-8">
+            <ScheduleSummary result={schedule} />
+            <ProductionDetails result={schedule} />
+            <DailyView result={schedule} workingHoursPerDay={workingHours} />
           </div>
         )}
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t mt-16 py-6 bg-card">
-        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>Powered by Genetic Algorithm optimization • Built for efficient factory planning</p>
-        </div>
-      </footer>
+      </div>
     </div>
   );
 };
