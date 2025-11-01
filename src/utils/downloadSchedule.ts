@@ -23,6 +23,15 @@ export const downloadScheduleAsCSV = (
     });
   });
 
+  csv += "\n\nDETAILED HOURLY BREAKDOWN\n\n";
+  csv += "Day,Date,Machine,Product,Pieces,Hours Used\n";
+
+  schedule.dailySchedule.forEach((day) => {
+    day.products.forEach((product) => {
+      csv += `${day.day},${format(day.date, "yyyy-MM-dd")},${product.machineInstance},${product.productName},${product.pieces},${product.hoursUsed.toFixed(2)}\n`;
+    });
+  });
+
   // Create blob and download
   const blob = new Blob([csv], { type: "text/csv" });
   const url = window.URL.createObjectURL(blob);
@@ -81,6 +90,20 @@ export const downloadScheduleAsText = (
     day.products.forEach((product) => {
       text += `  • ${product.productName}: ${product.pieces} pieces (${product.hoursUsed.toFixed(2)}h)\n`;
     });
+    text += "\n";
+  });
+
+  text += "DETAILED HOURLY BREAKDOWN\n";
+  text += "=".repeat(70) + "\n\n";
+
+  schedule.dailySchedule.forEach((day) => {
+    text += `Day ${day.day} - ${format(day.date, "EEEE, MMMM dd, yyyy")}\n`;
+    text += "-".repeat(70) + "\n";
+
+    day.products.forEach((product) => {
+      text += `Machine: ${product.machineInstance}, Product: ${product.productName}, Pieces: ${product.pieces}, Hours Used: ${product.hoursUsed.toFixed(2)}\n`;
+    });
+
     text += "\n";
   });
 

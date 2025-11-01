@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,8 +7,8 @@ import { ProductInput } from "@/components/ProductInput";
 import { ScheduleResults } from "@/components/ScheduleResults";
 import { GanttChart } from "@/components/GanttChart";
 import { DailyScheduleView } from "@/components/DailyScheduleView";
-import { Product, ProductionSchedule } from "@/types/production";
-import { GeneticAlgorithmScheduler } from "@/utils/geneticAlgorithm";
+import { Product, ProductionSchedule, MachineInventory, Machine } from "@/types/production";
+import { FactorialScheduler } from "@/utils/factorialScheduler";
 import { downloadScheduleAsCSV, downloadScheduleAsText } from "@/utils/downloadSchedule";
 import { toast } from "sonner";
 import { Factory, Sparkles, Download, FileText } from "lucide-react";
@@ -16,6 +16,16 @@ import { Factory, Sparkles, Download, FileText } from "lucide-react";
 const Index = () => {
   const [workingHours, setWorkingHours] = useState("8");
   const [products, setProducts] = useState<Product[]>([]);
+  const [machines, setMachines] = useState<Machine[]>([
+    { id: 'mixing-mill', name: 'Mixing Mill', type: 'Mixing Mill' },
+    { id: 'hydraulic-press', name: 'Hydraulic Press', type: 'Hydraulic Press' },
+    { id: 'rubber-cutter', name: 'Rubber Bale Cutter', type: 'Rubber Bale Cutter' }
+  ]);
+  const [machineInventory, setMachineInventory] = useState<MachineInventory[]>([
+    { machineId: 'mixing-mill', machineName: 'Mixing Mill', count: 1 },
+    { machineId: 'hydraulic-press', machineName: 'Hydraulic Press', count: 1 },
+    { machineId: 'rubber-cutter', machineName: 'Rubber Bale Cutter', count: 1 }
+  ]);
   const [schedule, setSchedule] = useState<ProductionSchedule | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -49,9 +59,10 @@ const Index = () => {
 
     // Simulate some processing time for the genetic algorithm
     setTimeout(() => {
-      const scheduler = new GeneticAlgorithmScheduler(
+      const scheduler = new FactorialScheduler(
         products,
-        parseFloat(workingHours)
+        parseFloat(workingHours),
+        machineInventory
       );
       const optimizedSchedule = scheduler.optimize();
       setSchedule(optimizedSchedule);
@@ -72,6 +83,22 @@ const Index = () => {
     toast.success("Schedule downloaded as text file");
   };
 
+  const handleProcessingTimeChange = (id: string, timeInMinutes: number) => {
+    setProducts((prevProducts) =>
+      prevProducts.map((product) =>
+        product.id === id
+          ? { ...product, processingTimePerUnit: timeInMinutes / 60 } // Convert minutes to hours
+          : product
+      )
+    );
+  };
+
+  useEffect(() => {
+    if (schedule && schedule.products.length === 0) {
+      toast.error("No valid schedule could be generated. Please check your inputs.");
+    }
+  }, [schedule]);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -82,7 +109,7 @@ const Index = () => {
             <div>
               <h1 className="text-3xl font-bold">Rubber Factory Production Scheduler</h1>
               <p className="text-muted-foreground mt-1">
-                Production planning using Genetic Algorithm optimization
+                Production planning using Factorial optimization
               </p>
             </div>
           </div>
@@ -94,9 +121,9 @@ const Index = () => {
         <Card>
           <CardHeader>
             <CardTitle>Factory Settings</CardTitle>
-            <CardDescription>Configure your factory's operational parameters</CardDescription>
+            <CardDescription>Configure your factory's operational parameters and machine inventory</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
             <div className="max-w-xs space-y-2">
               <Label htmlFor="working-hours">Working Hours per Day</Label>
               <Input
@@ -113,14 +140,49 @@ const Index = () => {
                 Total productive hours available per day
               </p>
             </div>
+
+            {/* Machine Inventory */}
+            <div className="space-y-4">
+              <h4 className="font-semibold text-sm">Machine Inventory</h4>
+              <div className="space-y-3">
+                {machineInventory.map((machine, index) => (
+                  <div key={machine.machineId} className="flex items-center gap-4 p-3 border rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium">{machine.machineName}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor={`machine-count-${index}`} className="text-sm">Count:</Label>
+                      <Input
+                        id={`machine-count-${index}`}
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={machine.count}
+                        onChange={(e) => {
+                          const newInventory = [...machineInventory];
+                          newInventory[index].count = parseInt(e.target.value) || 1;
+                          setMachineInventory(newInventory);
+                        }}
+                        className="w-20"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Specify how many of each machine type are available in your factory
+              </p>
+            </div>
           </CardContent>
         </Card>
 
         {/* Product Input */}
         <ProductInput
           products={products}
+          machines={machines}
           onAddProduct={handleAddProduct}
           onRemoveProduct={handleRemoveProduct}
+          onProcessingTimeChange={handleProcessingTimeChange}
         />
 
         {/* Generate Button */}
@@ -166,7 +228,8 @@ const Index = () => {
       {/* Footer */}
       <footer className="border-t mt-16 py-6 bg-card">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>Powered by Genetic Algorithm optimization • Built for efficient factory planning</p>
+          <p>• An initiative by Annette, Sania and Ron •</p>
+            <p>Powered by Factorial optimization • Built for efficient factory planning</p>
         </div>
       </footer>
     </div>
